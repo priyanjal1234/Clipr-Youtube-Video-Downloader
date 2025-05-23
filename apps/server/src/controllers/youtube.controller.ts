@@ -2,12 +2,19 @@ import { Request, Response } from "express";
 import { exec } from "child_process";
 import path from "path";
 import ytdlp from "yt-dlp-exec";
-import youtubeDl from "youtube-dl-exec";
+import { uploadToS3 } from "../utils/uploadToS3";
+import fs from "fs/promises";
+import { existsSync } from "fs";
 
-// 🎥 Get Video Info
+import extractFilePathFromStdout from "../utils/extractFilePath";
+
 export const getVideoInfo = async function (req: Request, res: Response) {
   try {
     const { videoUrl } = req.body;
+
+    if (!videoUrl) {
+      return res.status(400).json({ message: "Video URL is required" });
+    }
 
     const info = await ytdlp(videoUrl, {
       dumpSingleJson: true,
@@ -17,6 +24,7 @@ export const getVideoInfo = async function (req: Request, res: Response) {
     });
 
     const videoDetails = {
+      url: info.url,
       title: info.title,
       thumbnail: info.thumbnail,
       duration: info.duration,
@@ -26,14 +34,14 @@ export const getVideoInfo = async function (req: Request, res: Response) {
 
     return res.status(200).json(videoDetails);
   } catch (error) {
+    console.error("Error in getVideoInfo:", error);
     return res.status(500).json({
       message: error instanceof Error ? error.message : "Error fetching info",
     });
   }
 };
 
-// 📥 Download Video
-export const downloadVideo = (req: Request, res: Response) => {
+export const downloadVideo = async (req: Request, res: Response) => {
   try {
     const { videoUrl } = req.body;
 
@@ -51,32 +59,79 @@ export const downloadVideo = (req: Request, res: Response) => {
 
     const videoId = match[1];
     const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
     const pythonScriptPath = path.resolve(process.cwd(), "scripts/download.py");
+    const downloadsDir = path.join(process.cwd(), "downloads");
 
-    const command = `python "${pythonScriptPath}" "${cleanUrl}"`;
+    await fs.mkdir(downloadsDir, { recursive: true });
 
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`exec error: ${error}`);
-        return res.status(500).json({
-          message: "Video download failed",
-          error: error.message,
-        });
+    const command = `python "${pythonScriptPath}" "${cleanUrl}" "${downloadsDir}"`;
+
+    exec(
+      command,
+      { maxBuffer: 1024 * 1024 * 10 },
+      async (error, stdout, stderr) => {
+        if (error) {
+          console.error("Python script execution error:", error);
+          console.error("stderr:", stderr);
+          return res.status(500).json({
+            message: "Video download failed",
+            error: stderr || error.message,
+            details: "Check server logs for more information",
+          });
+        }
+
+        console.log("Python script output:", stdout);
+
+        let downloadedFilePath: string;
+
+        try {
+          downloadedFilePath = extractFilePathFromStdout(stdout);
+
+          const fileExists = await fs
+            .stat(downloadedFilePath)
+            .then(() => true)
+            .catch(() => false);
+
+          if (!fileExists) {
+            console.error("Downloaded file not found:", downloadedFilePath);
+            return res.status(500).json({
+              message: "Downloaded file not found",
+              details: `Extracted path: ${downloadedFilePath}`,
+            });
+          }
+
+          console.log("Found downloaded file at:", downloadedFilePath);
+
+          const s3Url = await uploadToS3(downloadedFilePath);
+
+          // Clean up
+          try {
+            await fs.unlink(downloadedFilePath);
+            console.log("Deleted local file:", downloadedFilePath);
+          } catch (cleanupErr) {
+            console.error("Cleanup failed:", cleanupErr);
+          }
+
+          return res.status(200).json({
+            message: "Video uploaded to S3 successfully",
+            s3Url,
+          });
+        } catch (parseError) {
+          console.error("Error parsing output:", parseError);
+          return res.status(500).json({
+            message: "Error extracting file path",
+            error:
+              parseError instanceof Error
+                ? parseError.message
+                : String(parseError),
+          });
+        }
       }
-
-      if (stderr) console.error(`stderr: ${stderr}`);
-      console.log(`stdout: ${stdout}`);
-
-      res.status(200).json({
-        message: "Video downloaded successfully",
-        output: stdout,
-      });
-    });
-  } catch (error) {
+    );
+  } catch (err) {
+    console.error("Unhandled error:", err);
     return res.status(500).json({
-      message:
-        error instanceof Error ? error.message : "Error downloading video",
+      message: err instanceof Error ? err.message : "Internal server error",
     });
   }
 };

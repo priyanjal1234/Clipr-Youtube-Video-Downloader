@@ -21,10 +21,13 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.816.0",
+    "@aws-sdk/lib-storage": "^3.816.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "url": "^0.11.4",
+    "uuid": "^11.1.0",
     "valid-url": "^1.0.9",
     "youtube-dl-exec": "^3.0.21",
     "yt-dlp-exec": "^1.0.2"
