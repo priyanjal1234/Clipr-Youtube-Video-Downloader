@@ -1,21 +1,22 @@
 import { Request, Response } from "express";
-
+import { exec } from "child_process";
+import path from "path";
 import ytdlp from "yt-dlp-exec";
-
 import youtubeDl from "youtube-dl-exec";
 
+// 🎥 Get Video Info
 export const getVideoInfo = async function (req: Request, res: Response) {
   try {
-    let { videoUrl } = req.body;
+    const { videoUrl } = req.body;
 
-    let info = await ytdlp(videoUrl, {
+    const info = await ytdlp(videoUrl, {
       dumpSingleJson: true,
       noCheckCertificate: true,
       noWarnings: true,
       preferFreeFormats: true,
     });
 
-    let videoDetails = {
+    const videoDetails = {
       title: info.title,
       thumbnail: info.thumbnail,
       duration: info.duration,
@@ -31,34 +32,51 @@ export const getVideoInfo = async function (req: Request, res: Response) {
   }
 };
 
-export const downloadVideo = function (req: Request, res: Response) {
+// 📥 Download Video
+export const downloadVideo = (req: Request, res: Response) => {
   try {
-    let { videoUrl } = req.body;
+    const { videoUrl } = req.body;
 
     if (!videoUrl) {
-      return res.status(400).json({ message: "Video Url is required" });
+      return res.status(400).json({ message: "Video URL is required" });
     }
 
-    res.setHeader("Content-Disposition", `attachment; filename="video.mp4"`);
-    res.setHeader("Content-Type", "video/mp4");
+    const match = videoUrl.match(
+      /(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([0-9A-Za-z_-]{11})/
+    );
 
-    youtubeDl(videoUrl, {
-      dumpSingleJson: true,
-      noCheckCertificates: true,
-      noWarnings: true,
-      preferFreeFormats: true,
-      addHeader: ["referer:youtube.com", "user-agent:googlebot"],
-      
-    })
-      .then((output) => {
-        console.log("Video Info:", output);
-        res.json(output);
-      })
-      .catch((err) => {
-        console.error("yt-dlp error", err);
-        res.status(500).json({ message: "Failed to fetch video info" });
+    if (!match) {
+      return res.status(400).json({ message: "Invalid YouTube URL" });
+    }
+
+    const videoId = match[1];
+    const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+    const pythonScriptPath = path.resolve(process.cwd(), "scripts/download.py");
+
+    const command = `python "${pythonScriptPath}" "${cleanUrl}"`;
+
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`exec error: ${error}`);
+        return res.status(500).json({
+          message: "Video download failed",
+          error: error.message,
+        });
+      }
+
+      if (stderr) console.error(`stderr: ${stderr}`);
+      console.log(`stdout: ${stdout}`);
+
+      res.status(200).json({
+        message: "Video downloaded successfully",
+        output: stdout,
       });
-
-    res.json({});
-  } catch (error) {}
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message:
+        error instanceof Error ? error.message : "Error downloading video",
+    });
+  }
 };
