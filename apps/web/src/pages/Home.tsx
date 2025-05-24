@@ -17,7 +17,7 @@ interface VideoData {
   duration: string;
   author?: string;
   views: string;
-  channel: string
+  channel: string;
 }
 
 interface HistoryItem {
@@ -43,6 +43,7 @@ const Home: React.FC = () => {
   const [downloadHistory, setDownloadHistory] = useState<HistoryItem[]>([]);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [url, setUrl] = useState("");
 
   const handleUrlSubmit = async (videoUrl: string) => {
     setIsLoading(true);
@@ -54,14 +55,14 @@ const Home: React.FC = () => {
         { videoUrl },
         { withCredentials: true }
       );
-      console.log(getVideoInfoRes.data)
+
       setIsLoading(false);
       if (getVideoInfoRes.status === 200) {
         setVideoData(getVideoInfoRes?.data);
       }
     } catch (error: any) {
       console.log(error);
-      setIsLoading(false)
+      setIsLoading(false);
       toast.error(error?.response?.data?.message);
     }
   };
@@ -70,10 +71,40 @@ const Home: React.FC = () => {
     setSelectedFormat(format);
   };
 
-  const handleDownload = () => {
+  const handleDownload = async (videoUrl: string) => {
     if (!videoData || !selectedFormat) return;
 
     setIsDownloading(true);
+
+    try {
+      let downloadRes = await axios.post(
+        "http://localhost:3000/api/youtube/video/download",
+        { videoUrl, format: selectedFormat },
+        { withCredentials: true }
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      let { s3Url } = downloadRes.data;
+
+      const response = await fetch(s3Url);
+      if (!response.ok) throw new Error("Failed to fetch video file");
+
+      const blob = await response.blob();
+
+      // Create object URL and trigger download
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${videoData?.title}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.log(error);
+      toast.error(error?.response?.data?.message);
+    }
   };
 
   const handleCancelDownload = () => {
@@ -107,7 +138,7 @@ const Home: React.FC = () => {
               </p>
             </div>
 
-            <UrlInput onSubmit={handleUrlSubmit} />
+            <UrlInput url={url} setUrl={setUrl} onSubmit={handleUrlSubmit} />
 
             {(isLoading || videoData) && (
               <VideoInfo video={videoData} isLoading={isLoading} />
@@ -116,7 +147,7 @@ const Home: React.FC = () => {
             {videoData && (
               <FormatSelector
                 onSelect={handleFormatSelect}
-                onDownload={handleDownload}
+                onDownload={() => handleDownload(url)}
                 isLoading={isLoading}
               />
             )}

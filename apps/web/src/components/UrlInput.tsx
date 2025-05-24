@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { Link2, X } from 'lucide-react';
 
 interface UrlInputProps {
+  url: string;
+  setUrl: React.Dispatch<React.SetStateAction<string>>;
   onSubmit: (url: string) => void;
 }
 
-const UrlInput: React.FC<UrlInputProps> = ({ onSubmit }) => {
-  const [url, setUrl] = useState('');
+const UrlInput: React.FC<UrlInputProps> = ({ url,setUrl,onSubmit }) => {
+  
   const [isValid, setIsValid] = useState(true);
   const [isFocused, setIsFocused] = useState(false);
 

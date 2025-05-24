@@ -7,6 +7,7 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 
 import extractFilePathFromStdout from "../utils/extractFilePath";
+import waitForFile from "../utils/waitForFile";
 
 export const getVideoInfo = async function (req: Request, res: Response) {
   try {
@@ -43,7 +44,7 @@ export const getVideoInfo = async function (req: Request, res: Response) {
 
 export const downloadVideo = async (req: Request, res: Response) => {
   try {
-    const { videoUrl } = req.body;
+    const { videoUrl, format } = req.body;
 
     if (!videoUrl) {
       return res.status(400).json({ message: "Video URL is required" });
@@ -64,7 +65,7 @@ export const downloadVideo = async (req: Request, res: Response) => {
 
     await fs.mkdir(downloadsDir, { recursive: true });
 
-    const command = `python "${pythonScriptPath}" "${cleanUrl}" "${downloadsDir}"`;
+    const command = `python "${pythonScriptPath}" "${cleanUrl}" "${downloadsDir}" "${format}"`;
 
     exec(
       command,
@@ -87,11 +88,7 @@ export const downloadVideo = async (req: Request, res: Response) => {
         try {
           downloadedFilePath = extractFilePathFromStdout(stdout);
 
-          const fileExists = await fs
-            .stat(downloadedFilePath)
-            .then(() => true)
-            .catch(() => false);
-
+          const fileExists = await waitForFile(downloadedFilePath, 5000);
           if (!fileExists) {
             console.error("Downloaded file not found:", downloadedFilePath);
             return res.status(500).json({

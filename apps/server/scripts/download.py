@@ -1,60 +1,73 @@
 import sys
 import os
+import time
 import yt_dlp
-import random
-import string
-from pathlib import Path
 
-def generate_random_string(length=8):
-    letters = string.ascii_letters + string.digits
-    return ''.join(random.choice(letters) for _ in range(length))
+if len(sys.argv) < 4:
+    print("Usage: script.py <video_url> <output_path> <format>")
+    sys.exit(1)
 
-def download_video(url, output_dir="downloads"):
-    try:
-        # Ensure output directory exists
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
+video_url = sys.argv[1]
+output_path = sys.argv[2]
+video_format = sys.argv[3]
 
-        # Generate a random filename (without extension)
-        random_filename = generate_random_string()
+ffmpeg_path = 'C:\\ffmpeg\\bin'
 
-        # yt-dlp options
-        ydl_opts = {
-            'format': 'best[ext=mp4]/best',
-            'outtmpl': os.path.join(output_dir, f'{random_filename}.%(ext)s'),
-            'quiet': True,
-            'no_warnings': True,
-            'merge_output_format': None,
-            'ignore_no_formats_error': True,
-            'postprocessors': [],
-            'allow_multiple_streams': False
-        }
+base_opts = {
+    'ffmpeg_location': ffmpeg_path,
+    'outtmpl': os.path.join(output_path, '%(id)s.%(ext)s'),
+    'merge_output_format': 'mp4',
+}
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            downloaded_file = ydl.prepare_filename(info)
+if video_format == "mp3":
+    ydl_opts = {
+        **base_opts,
+        'format': 'bestaudio/best',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+    }
+elif video_format in ["360", "720", "1080"]:
+    height = video_format
+    ydl_opts = {
+        **base_opts,
+        'format': f'bestvideo[height<={height}]+bestaudio/best',
+    }
+else:
+    ydl_opts = {
+        **base_opts,
+        'format': 'bestvideo+bestaudio/best',
+    }
 
-            # Confirm file exists
-            if not os.path.exists(downloaded_file):
-                raise FileNotFoundError(f"File not found: {downloaded_file}")
+with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    info = ydl.extract_info(video_url, download=True)
 
-            return os.path.abspath(downloaded_file)
+    # Get downloaded file(s)
+    downloaded_files = []
 
-    except Exception as e:
-        raise Exception(f"Download failed: {str(e)}")
+    if 'requested_downloads' in info:
+        for item in info['requested_downloads']:
+            path = item.get('filepath')
+            if path:
+                downloaded_files.append(path)
+    elif '_filename' in info:
+        downloaded_files.append(info['_filename'])
 
-if __name__ == "__main__":
-    try:
-        if len(sys.argv) < 2:
-            print("Usage: python download.py <video_url> [output_dir]", file=sys.stderr)
-            sys.exit(1)
+    # Wait and check if file appears (5 seconds max)
+    found = False
+    for file in downloaded_files:
+        for attempt in range(5):  # Try for 5 seconds
+            if os.path.exists(file):
+                print("Download successful:", file)
+                found = True
+                break
+            else:
+                time.sleep(1)  # wait 1 second before retrying
 
-        url = sys.argv[1]
-        output_dir = sys.argv[2] if len(sys.argv) > 2 else "downloads"
-        path = download_video(url, output_dir)
+        if not found:
+            print("File not found after download (still missing):", file)
 
-        # Print only the final path
-        print(path, end='')
-
-    except Exception as e:
-        print(f"ERROR: {str(e)}", file=sys.stderr)
-        sys.exit(1)
+    if not found:
+        print("All expected files not found. Something went wrong.")

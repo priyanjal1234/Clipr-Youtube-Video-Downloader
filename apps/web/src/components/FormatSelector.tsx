@@ -32,12 +32,27 @@ const FormatSelector: React.FC<FormatSelectorProps> = ({
       format: "video",
       size: "120MB",
     },
+    
     {
       id: "2",
       label: "MP4 - 720p",
       quality: "720p",
       format: "video",
       size: "70MB",
+    },
+    {
+      id: "3",
+      label: "MP4 - 480p",
+      quality: "480p",
+      format: "video",
+      size: "45MB",
+    },
+    {
+      id: "4",
+      label: "MP4 - 360p",
+      quality: "360p",
+      format: "video",
+      size: "25MB",
     },
   ];
 
@@ -91,6 +106,7 @@ const FormatSelector: React.FC<FormatSelectorProps> = ({
             </div>
             {formats
               .filter((f) => f.format === "video")
+              .reverse()
               .map((format) => (
                 <button
                   key={format.id}
